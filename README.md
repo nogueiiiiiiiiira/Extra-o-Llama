@@ -98,7 +98,7 @@ O projeto utiliza uma stack de tecnologias open-source para processamento de lin
 
 - **O que é?** Modelo de linguagem grande (LLM) da família Llama 3.2, desenvolvido pela Meta (anteriormente Facebook). Versão "Instruct" otimizada para seguir instruções e tarefas conversacionais.
 - **Formato GGUF**: Quantizado em formato GGUF (GGML Unified Format), compatível com bibliotecas como `llama-cpp-python` para inferência eficiente em CPU/GPU.
-- **Por que este modelo?** Foi o mais recomendável para o projeto: não muito pesado (3B parâmetros, ~2GB quantizado), executa localmente sem necessidade de hardware avançado, e atende à tarefa de extração de entidades clínicas em português. Mesmo com limitações de contexto (8192 tokens), consegui contornar dividindo as narrativas em blocos menores (máx. 500 caracteres) para processamento sequencial, mantendo a precisão necessária para o escopo acadêmico do PIBIC.
+- **Por que este modelo?** Foi o mais recomendável para o projeto: não muito pesado (3B parâmetros, ~2GB quantizado), executa localmente sem necessidade de hardware avançado, e atende à tarefa de extração de entidades clínicas em português. Mesmo com limitações de contexto (8192 tokens), consegui contornar dividindo as narrativas em blocos menores (máx. 500 caracteres) para processamento sequencial.
 
 ### Hugging Face
 
