@@ -66,6 +66,9 @@ def main():
     else:
         print(f"\n✅ {len(arquivos_xml)} arquivos XML encontrados. Iniciando processamento...")
 
+    # iniciar timer para processamento dos XMLs
+    start_time = time.time()
+
     # processar XMLs
     lista_dataframes_individuais = []
     for caminho_narrativa in arquivos_xml:
@@ -105,6 +108,10 @@ def main():
             except Exception as e:
                 print(f"\n❌ Erro: {e}. Pulando arquivo.")
                 break
+
+    # finalizar timer
+    elapsed_time = time.time() - start_time
+    print(f"\n⏱️ TEMPO TOTAL: {elapsed_time:.2f} segundos ({elapsed_time/60:.2f} minutos)")
 
     # consolidar CSVs
     if lista_dataframes_individuais:

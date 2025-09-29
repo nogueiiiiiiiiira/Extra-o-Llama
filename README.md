@@ -65,7 +65,7 @@ O código processa arquivos XML contendo narrativas clínicas, utiliza o modelo 
 .
 ├── main.py                  # Script principal
 ├── config.json              # Configurações do projeto (caminhos, parâmetros)
-├── dicionario.json          # Dicionário local de códigos SNOMED CT
+├── dicionario.json          # Dicionário local de códigos SNOMED CT (cache para mapeamentos de códigos SNOMED para termos médicos, preenchido automaticamente durante a execução)
 ├── modelo/                  # Pasta para o modelo Llama
 │   └── Llama-3.2-3B-Instruct-Q4_K_M.gguf
 ├── narrativas/              # Arquivos XML de narrativas clínicas
