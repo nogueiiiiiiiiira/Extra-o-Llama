@@ -189,44 +189,14 @@ Os modelos GGUF são baixados do Hugging Face, especificamente do repositório [
 
 **Nota**: Certifique-se de ter espaço em disco suficiente e conexão estável. Modelos maiores podem levar tempo para baixar.
 
-#### Alternativa: Mudando para Ollama
-
-Se preferir usar [Ollama](https://ollama.com/) (uma ferramenta para executar LLMs localmente com interface simplificada), você pode alternar, pois Ollama não está incluído no projeto devido ao seu tamanho (~GBs adicionais).
-
-1. **Instale Ollama**:
-   - Baixe e instale do site oficial: [ollama.com](https://ollama.com/).
-   - No terminal: `ollama pull llama3.2:3b` (ou outra versão, ex.: `llama3.2:7b`).
-
-2. **Modifique o Código**:
-   - Instale a biblioteca `ollama` para Python: `pip install ollama`.
-   - Em `codigo_pibic.py`, substitua as importações e inicialização:
-     ```python
-     # Remova: from llama_cpp import Llama
-     # Adicione: import ollama
-
-     # Substitua: llm = Llama(model_path=modelo_path, n_ctx=8192)
-     # Por: # Ollama gerencia o modelo internamente
-     ```
-   - Modifique a função `PesquisaClin_Llama` para usar a API do Ollama:
-     ```python
-     def PesquisaClin_Llama(textoClinico):
-         prompt = f"... (seu prompt) ... {textoClinico}"
-         try:
-             result = ollama.generate(model='llama3.2:3b', prompt=prompt, options={'temperature': 0.7})
-             return result['response']
-         except Exception as e:
-             return f"Erro na chamada Ollama: {e}"
-     ```
-   - Ajuste o nome do modelo conforme baixado (ex.: 'llama3.2:3b').
-
-3. **Vantagens/Desvantagens**:
-   - **Vantagens**: Interface mais simples, gerenciamento automático de modelos.
-   - **Desvantagens**: Consome mais recursos que GGUF puro, menos controle fino sobre parâmetros.
-
-**Nota**: Teste a modificação com um texto pequeno. Se o desempenho não atender, volte para `llama-cpp-python`.
-
 ## Resultados e Avaliação
 
 - **Métricas Calculadas**: Precisão, Recall, F1-Score baseadas em VP, FP, FN.
 - **Comparação**: Inclui similaridade semântica para reduzir FPs/FNs por variações de termos.
 - **Mapeamento SNOMED**: Verifica códigos SCTID contra um dicionário local e API (se disponível).
+
+## Diferença entre Ollama e Llama
+
+- **Llama**: Refere-se à família de modelos de linguagem grande (LLMs) desenvolvidos pela Meta (anteriormente Facebook). Estes modelos são treinados em grandes quantidades de dados e podem ser usados para tarefas como geração de texto, tradução e extração de informações. No projeto, usamos o `llama-cpp-python` para executar versões quantizadas do Llama localmente em formato GGUF.
+
+- **Ollama**: É uma ferramenta de software open-source que facilita a execução de modelos de IA, incluindo modelos Llama, localmente na máquina do usuário. Ollama fornece uma interface simplificada para baixar, gerenciar e executar LLMs sem necessidade de configurações complexas. É uma alternativa ao `llama-cpp-python`, oferecendo maior facilidade de uso, mas com menos controle sobre parâmetros avançados e potencialmente maior consumo de recursos.
