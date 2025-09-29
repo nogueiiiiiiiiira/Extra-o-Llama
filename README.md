@@ -57,7 +57,7 @@ O código processa arquivos XML contendo narrativas clínicas, utiliza o modelo 
    - Resultados finais: `Resultados.xlsx` com métricas e comparações.
 
 3. **Visualização de Métricas**:
-   O script imprime no console as métricas finais (Precision, Recall, F1-Score).
+   O script imprime no console as métricas finais (Precisão, Recall, F1-Score).
 
 ## Estrutura do Projeto
 
@@ -216,6 +216,6 @@ Se preferir usar [Ollama](https://ollama.com/) (uma ferramenta para executar LLM
 
 ## Resultados e Avaliação
 
-- **Métricas Calculadas**: Precision, Recall, F1-Score baseadas em VP, FP, FN.
+- **Métricas Calculadas**: Precisão, Recall, F1-Score baseadas em VP, FP, FN.
 - **Comparação**: Inclui similaridade semântica para reduzir FPs/FNs por variações de termos.
 - **Mapeamento SNOMED**: Verifica códigos SCTID contra um dicionário local e API (se disponível).
