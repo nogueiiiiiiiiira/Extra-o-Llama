@@ -47,7 +47,7 @@ O código processa arquivos XML contendo narrativas clínicas, utiliza o modelo 
 
 1. **Execute o script principal**:
    ```
-   python codigo_pibic.py
+   python main.py
    ```
    **Nota sobre tempo de execução**: O script pode demorar alguns minutos a horas para processar todas as narrativas, dependendo do hardware (CPU/GPU, RAM) e do número de arquivos. Isso ocorre devido ao carregamento do modelo Llama (que consome memória) e ao processamento sequencial dos textos com inferência de IA. Em máquinas com GPU, o tempo é reduzido significativamente.
 
@@ -63,16 +63,25 @@ O código processa arquivos XML contendo narrativas clínicas, utiliza o modelo 
 
 ```
 .
-├── codigo_pibic.py          # Script principal
-├── processador_csv.py       # Funções para processar e exportar dados
+├── main.py                  # Script principal
+├── config.json              # Configurações do projeto (caminhos, parâmetros)
 ├── dicionario.json          # Dicionário local de códigos SNOMED CT
 ├── modelo/                  # Pasta para o modelo Llama
 │   └── Llama-3.2-3B-Instruct-Q4_K_M.gguf
 ├── narrativas/              # Arquivos XML de narrativas clínicas
-│   ├── 9053.xml
-│   ├── 9053_goldstandard.xml
+│   ├── 9400_goldstandard.xml
+│   ├── 9410.xml
 │   └── equivalências.xlsx
-├── csv_output/              # Saídas CSV geradas
+├── comando_llama/           # Prompts para o modelo Llama
+│   └── prompt.py
+├── utils/                   # Módulos utilitários
+│   ├── config.py            # Funções para carregar configurações
+│   ├── processador_csv.py   # Funções para processar e exportar dados CSV
+│   ├── analise.py           # Funções de análise e métricas
+│   ├── mapeamento_snomed.py # Funções para mapeamento SNOMED CT
+│   ├── processar_llama.py   # Funções para interação com Llama
+│   └── processar_xml.py     # Funções para processar arquivos XML
+├── csv_output/              # Saídas CSV geradas (criada automaticamente)
 ├── Resultados.xlsx          # Resultados finais com métricas
 └── README.md                # Este arquivo
 ```
@@ -139,17 +148,19 @@ O projeto utiliza a biblioteca `llama-cpp-python` para executar modelos Llama lo
 
 #### Onde Especificar a Versão do Modelo
 
-A versão do modelo é especificada no arquivo `codigo_pibic.py`, na variável `modelo_path`:
+A versão do modelo é especificada no arquivo `config.json`, na chave `modelo_path`:
 
-```python
-modelo_path = os.path.join(base_dir, "modelo", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")
+```json
+{
+  "modelo_path": "modelo/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+}
 ```
 
 Para usar uma versão diferente:
 1. Baixe o arquivo GGUF desejado (veja seções abaixo).
 2. Coloque o arquivo na pasta `modelo/`.
-3. Atualize o nome do arquivo na variável `modelo_path` em `codigo_pibic.py`.
-4. Ajuste parâmetros como `n_ctx` se necessário (ex.: aumentar para modelos maiores).
+3. Atualize o valor da chave `modelo_path` em `config.json`.
+4. Ajuste parâmetros como `llm_n_ctx` em `config.json` se necessário (ex.: aumentar para modelos maiores).
 
 #### Qual Versão Usar
 
