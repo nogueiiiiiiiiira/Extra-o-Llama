@@ -1,202 +1,128 @@
-# Projeto PIBIC: Extração de Achados Clínicos com Llama
+# Extração e Avaliação de Termos Clínicos
 
-Este projeto utiliza um modelo de linguagem Llama para extrair achados clínicos (sinais, sintomas, doenças e síndromes) de narrativas médicas em português, mapeá-los para códigos SNOMED CT e comparar com anotações de referência (goldstandard) para avaliação de desempenho.
+Este projeto processa narrativas clínicas em formato XML, extrai termos clínicos (sinais/sintomas e doenças/síndromes) usando modelo LLaMA, compara com anotações gold standard, realiza análise de similaridade, mapeia para SNOMED CT e calcula métricas de avaliação.
 
-## Descrição do Projeto
+## Pré-requisitos
 
-O código processa arquivos XML contendo narrativas clínicas, utiliza o modelo Llama para identificar e classificar termos médicos relevantes, e gera métricas de precisão, recall e F1-score comparando com anotações manuais de especialistas.
+- Python 3.8 ou superior.
+- Pelo menos 8 GB de RAM (recomendado 16 GB para processamento de textos longos).
+- GPU com suporte a CUDA (opcional, acelera o processamento com LLaMA).
+- Espaço em disco: ~5 GB para o modelo LLaMA.
 
-### Funcionalidades Principais
-- **Extração de Termos Clínicos**: Identifica sinais/sintomas e doenças/síndromes em textos clínicos.
-- **Mapeamento SNOMED CT**: Busca códigos SCTID correspondentes aos termos extraídos.
-- **Comparação com Gold Standard**: Avalia a precisão do modelo contra anotações de referência.
-- **Cálculo de Métricas**: Gera VP (Verdadeiros Positivos), FP (Falsos Positivos), FN (Falsos Negativos) e métricas agregadas.
-- **Similaridade Semântica**: Usa TF-IDF e stemming para melhorar a correspondência de termos similares.
-
-## Requisitos
-
-- Python 3.8+
-- Bibliotecas: `llama-cpp-python`, `pandas`, `openpyxl`, `scikit-learn`, `nltk`, `unidecode`, `requests`
-- Modelo Llama: Llama-3.2-3B-Instruct-Q4_K_M.gguf (aprox. 2GB de espaço em disco)
-
-### Hardware Recomendado
-- RAM: 8GB mínimo (16GB recomendado)
-- Espaço em disco: 5GB para modelo e dados
-- GPU: Opcional, mas acelera a inferência (suporte CUDA se disponível)
+**Nota sobre Tokens e Limitações do Modelo:**  
+Devido às limitações de hardware do computador usado no desenvolvimento, o código foi otimizado para dividir narrativas, prompts e textos em partes menores. O LLaMA trabalha com "tokens" (unidades de texto, como palavras ou fragmentos de palavras, que o modelo processa). Cada modelo tem um limite de tokens que pode processar de uma vez (contexto máximo). Se o texto exceder esse limite, o código divide automaticamente o conteúdo para evitar erros. Isso garante que o processamento funcione mesmo em máquinas com recursos limitados.  
+**Aviso:** O processamento com LLaMA pode ser demorado, dependendo do tamanho das narrativas e da potência do hardware. Paciência é recomendada.  
+**Atualização do Modelo:** Se desejar usar um modelo LLaMA superior (ex: com mais parâmetros ou melhor desempenho), altere o caminho do modelo em `main.py` (linha com `Llama(model_path=...)`) e ajuste parâmetros como `n_ctx` e `max_tokens` nas chamadas de função. Baixe o novo modelo via Hugging Face e coloque em `modelo/`.
 
 ## Instalação
 
-1. **Clone ou baixe o repositório**:
-   ```
-   git clone <url-do-repositorio>
-   cd <diretorio-do-projeto>
-   ```
+1. Instale Python (versão 3.8+): [Download Python](https://www.python.org/downloads/)
+2. Instale Hugging Face CLI: `pip install huggingface_hub`
+3. Clone o repositório.
+4. Instale dependências: `pip install -r requirements.txt`
+5. Baixe o modelo LLaMA. Execute: `huggingface-cli download hugging-quants/Llama-3.2-3B-Instruct-Q4_K_M-GGUF --include "llama-3.2-3b-instruct-q4_k_m.gguf" --local-dir ./modelo/`
+6. Coloque narrativas XML na pasta `narrativas/`.
 
-2. **Instale as dependências**:
-   ```
-   pip install llama-cpp-python pandas openpyxl scikit-learn nltk unidecode requests
-   ```
+## Preparação dos Dados
 
-3. **Baixe o modelo Llama** (veja seção "Modelo Llama" abaixo).
-
-4. **Prepare os dados**:
-   - Coloque os arquivos XML de narrativas na pasta `narrativas/`.
-   - Certifique-se de que há um arquivo `equivalências.xlsx` para mapeamentos adicionais.
+- As narrativas devem estar em formato XML, com o texto clínico dentro da tag `<TEXT>`.
+- Arquivos gold standard devem ter o sufixo `_goldstandard.xml` (ex: `9053.xml` e `9053_goldstandard.xml`).
+- Coloque os arquivos na pasta `narrativas/`.
 
 ## Uso
 
-1. **Execute o script principal**:
-   ```
-   python main.py
-   ```
-   **Nota sobre tempo de execução**: O script pode demorar alguns minutos a horas para processar todas as narrativas, dependendo do hardware (CPU/GPU, RAM) e do número de arquivos. Isso ocorre devido ao carregamento do modelo Llama (que consome memória) e ao processamento sequencial dos textos com inferência de IA. Em máquinas com GPU, o tempo é reduzido significativamente.
-
-2. **Saídas**:
-   - CSVs individuais por narrativa em `csv_output/`.
-   - CSV consolidado: `csv_output/todas_narrativas_extraidas_ordenado.csv`.
-   - Resultados finais: `Resultados.xlsx` com métricas e comparações.
-
-3. **Visualização de Métricas**:
-   O script imprime no console as métricas finais (Precisão, Recall, F1-Score).
+1. Certifique-se de que o modelo LLaMA está baixado em `modelo/`.
+2. Execute `python main.py` para processar todas as narrativas e gerar resultados.
+3. O processamento pode levar tempo dependendo do número e tamanho das narrativas.
 
 ## Estrutura do Projeto
 
+A estrutura completa do projeto é a seguinte (arquivos obrigatórios, opcionais e gerados estão marcados):
+
 ```
-.
-├── main.py                  # Script principal
-├── config.json              # Configurações do projeto (caminhos, parâmetros)
-├── dicionario.json          # Dicionário local de códigos SNOMED CT (cache para mapeamentos de códigos SNOMED para termos médicos, preenchido automaticamente durante a execução)
-├── modelo/                  # Pasta para o modelo Llama
-│   └── Llama-3.2-3B-Instruct-Q4_K_M.gguf
-├── narrativas/              # Arquivos XML de narrativas clínicas
-│   ├── 9400_goldstandard.xml
-│   ├── 9410.xml
-│   └── equivalências.xlsx
-├── comando_llama/           # Prompts para o modelo Llama
-│   └── prompt.py
-├── utils/                   # Módulos utilitários
-│   ├── config.py            # Funções para carregar configurações
-│   ├── processador_csv.py   # Funções para processar e exportar dados CSV
-│   ├── analise.py           # Funções de análise e métricas
-│   ├── mapeamento_snomed.py # Funções para mapeamento SNOMED CT
-│   ├── processar_llama.py   # Funções para interação com Llama
-│   └── processar_xml.py     # Funções para processar arquivos XML
-├── csv_output/              # Saídas CSV geradas (criada automaticamente)
-├── Resultados.xlsx          # Resultados finais com métricas
-└── README.md                # Este arquivo
-```
-
-## Pastas e Arquivos Necessários vs. Gerados
-
-### Pastas/Arquivos que devem existir no repositório (inputs necessários):
-- `modelo/`: Contém o modelo LLaMA (`Llama-3.2-3B-Instruct-Q4_K_M.gguf`).
-- `narrativas/`: Contém os arquivos XML das narrativas (ex: `9400_goldstandard.xml`, `9410.xml`) e o arquivo `equivalências.xlsx`.
-- `dicionario.json`: Dicionário local de códigos SNOMED CT (se não existir, será criado vazio e atualizado durante a execução).
-
-### Pastas/Arquivos gerados automaticamente pelo código:
-- `csv_output/`: Criada automaticamente se não existir.
-- `Resultados.xlsx`: Gerado com as métricas finais e comparações.
-- Arquivos CSV individuais em `csv_output/` (ex: `output_9410.xml.csv`).
-- `todas_narrativas_extraidas_ordenado.csv` em `csv_output/`.
-
-## Tecnologias e Bibliotecas Utilizadas
-
-O projeto utiliza uma stack de tecnologias open-source para processamento de linguagem natural, manipulação de dados e inferência de IA local. 
-
-### Modelo de IA: Llama-3.2-3B-Instruct
-
-- **O que é?** Modelo de linguagem grande (LLM) da família Llama 3.2, desenvolvido pela Meta (anteriormente Facebook). Versão "Instruct" otimizada para seguir instruções e tarefas conversacionais.
-- **Formato GGUF**: Quantizado em formato GGUF (GGML Unified Format), compatível com bibliotecas como `llama-cpp-python` para inferência eficiente em CPU/GPU.
-- **Por que este modelo?** Foi o mais recomendável para o projeto: não muito pesado (3B parâmetros, ~2GB quantizado), executa localmente sem necessidade de hardware avançado, e atende à tarefa de extração de entidades clínicas em português. Mesmo com limitações de contexto (8192 tokens), consegui contornar dividindo as narrativas em blocos menores (máx. 500 caracteres) para processamento sequencial.
-
-### Hugging Face
-
-- **O que é?** Plataforma open-source para compartilhamento de modelos de IA, datasets e ferramentas. Funciona como um "GitHub para IA", permitindo download gratuito de modelos pré-treinados. É mantido pela Hugging Face Inc. e conta com uma comunidade ativa.
-- **Uso no projeto**: Fonte para baixar o modelo Llama quantizado (via repositório TheBloke, que converte modelos oficiais para formatos otimizados como GGUF).
-
-### Biblioteca Principal: llama-cpp-python
-
-- **O que é?** Wrapper Python para a biblioteca C++ llama.cpp, que permite executar modelos Llama (e similares) localmente em CPU ou GPU, sem dependência de APIs em nuvem.
-- **Uso no projeto**: Carrega e executa o modelo Llama para gerar respostas às prompts de extração de achados clínicos. Configurado com `n_ctx=8192` para contexto máximo e `temperature=0.7` para criatividade controlada.
-
-### Outras Bibliotecas Python
-
-- **pandas**: Manipulação e análise de dados tabulares (DataFrames). Usado para criar, filtrar e exportar CSVs com os achados extraídos.
-- **openpyxl**: Leitura/escrita de arquivos Excel (.xlsx). Utilizado para gerar o relatório final `Resultados.xlsx` com métricas e comparações.
-- **xml.etree.ElementTree**: Parsing de XML nativo do Python. Processa os arquivos de narrativas clínicas e gold standard para extrair texto e anotações.
-- **unidecode**: Normalização de texto, removendo acentos e caracteres especiais. Padroniza termos médicos para comparação (ex.: "coração" vs "coracao").
-- **scikit-learn (sklearn)**:
-  - `TfidfVectorizer`: Converte texto em vetores TF-IDF para cálculo de similaridade.
-  - `cosine_similarity`: Mede similaridade entre termos para reduzir falsos positivos/negativos por variações (ex.: "dispneia" vs "falta de ar").
-- **nltk**: Biblioteca de processamento de linguagem natural.
-  - `RSLPStemmer`: Redução de palavras à raiz (stemming) em português, usado na similaridade semântica.
-- **numpy**: Computação numérica. Suporte para arrays e operações matemáticas (usado indiretamente via sklearn).
-- **requests**: Cliente HTTP para APIs. Planejado para consultas à API SNOMED CT, mas no código atual usa dicionário local (`dicionario.json`).
-- **json**: Manipulação de dados JSON. Carrega/salva o dicionário local de códigos SNOMED (arquivo `dicionario.json` na raiz do projeto).
-- **os**: Interações com o sistema operacional (caminhos de arquivos, criação de pastas).
-- **time**: Controle de tempo. Adiciona delays (`sleep`) entre processamentos para evitar sobrecarga.
-
-### Infraestrutura
-
-- **Execução Local**: Tudo roda na máquina do usuário (CPU/GPU), garantindo privacidade de dados médicos.
-- **Processamento em Blocos**: Devido ao limite de contexto do modelo, textos longos são divididos em blocos de ~500 caracteres, processados sequencialmente e recombinados.
-- **Armazenamento**: Dados em CSV/Excel para análise posterior; modelo em pasta dedicada.
-
-## Modelo Llama
-
-O projeto utiliza a biblioteca `llama-cpp-python` para executar modelos Llama localmente em formato GGUF (GGML Unified Format), garantindo privacidade e independência de APIs externas. O modelo padrão é o `Llama-3.2-3B-Instruct-Q4_K_M.gguf`, mas você pode especificar e baixar outras versões conforme necessário.
-
-#### Onde Especificar a Versão do Modelo
-
-A versão do modelo é especificada no arquivo `config.json`, na chave `modelo_path`:
-
-```json
-{
-  "modelo_path": "modelo/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
-}
+projeto/
+├── main.py                           # Obrigatório: Script principal para executar o pipeline.
+├── README.md                         # Opcional: Documentação do projeto.
+├── requirements.txt                  # Obrigatório: Dependências Python.
+├── comando_llama/
+│   └── prompt.py                     # Obrigatório: Template de prompt para LLaMA.
+├── modelo/
+│   └── Llama-3.2-3B-Instruct-Q4_K_M.gguf  # Obrigatório: Modelo LLaMA baixado (não incluído no repositório).
+├── narrativas/
+│   ├── 9053.xml                      # Obrigatório: Arquivos XML de narrativas clínicas (exemplo).
+│   └── 9053_goldstandard.xml         # Obrigatório: Arquivos gold standard correspondentes.
+├── utils/
+│   ├── processador_narrativa.py      # Obrigatório: Processamento de narrativas.
+│   ├── processador_csv.py            # Obrigatório: Manipulação de CSVs.
+│   ├── processador_excel.py          # Obrigatório: Manipulação de Excel e dicionários.
+│   ├── processador_llama.py          # Obrigatório: Interface com LLaMA.
+│   ├── processador_relacoes.py       # Obrigatório: Processamento de relações XML.
+│   ├── processador_xml.py            # Obrigatório: Parse de XML.
+│   ├── similaridade.py               # Obrigatório: Cálculo de similaridade.
+│   └── mapeamento_snomed.py          # Obrigatório: Mapeamento SNOMED CT.
+└── data/                             # Gerado automaticamente: Pasta de saídas.
+    ├── csv_output/
+    │   ├── output_9053.xml.csv       # Gerado: CSVs individuais por narrativa.
+    │   └── todas_narrativas_extraidas_ordenado.csv  # Gerado: CSV mestre.
+    ├── Resultados.xlsx               # Gerado: Excel com métricas e classificações.
+    └── dicionario.json               # Gerado: Dicionário SNOMED persistido.
 ```
 
-Para usar uma versão diferente:
-1. Baixe o arquivo GGUF desejado (veja seções abaixo).
-2. Coloque o arquivo na pasta `modelo/`.
-3. Atualize o valor da chave `modelo_path` em `config.json`.
-4. Ajuste parâmetros como `llm_n_ctx` em `config.json` se necessário (ex.: aumentar para modelos maiores).
+**Notas sobre Arquivos:**
+- **Obrigatórios:** Devem existir antes da execução (código fonte, modelo, dados de entrada).
+- **Opcionais:** Melhoram a documentação ou são extras.
+- **Gerados:** Criados automaticamente durante a execução; não precisam existir inicialmente.
 
-#### Qual Versão Usar
+## Módulos e Funções
 
-- **Padrão**: `Llama-3.2-3B-Instruct-Q4_K_M.gguf` (~2GB) - Equilibra desempenho e recursos, adequado para extração de entidades clínicas em português.
-- **Para Melhor Desempenho**: Modelos maiores como `Llama-3.2-7B-Instruct-Q4_K_M` (~4GB) ou `Llama-3.2-13B-Instruct-Q4_K_M` (~7GB) oferecem maior precisão, mas requerem mais RAM (8-32GB) e tempo de processamento.
-- **Para Máxima Precisão**: `Llama-3.1-70B-Instruct-Q4_K_M` (~40GB), mas impraticável sem GPUs dedicadas.
+### main.py
+- Script principal que orquestra o pipeline.
+- Inicializa modelo LLaMA.
+- Chama funções de processamento e calcula métricas finais.
 
-#### Como Baixar Outras Versões
+### utils/processador_narrativa.py
+- `processar_narrativas()`: Processa arquivos XML, chama LLaMA para extração, formata saída para CSV.
+- `formatar_saida()`: Chama criação de CSV.
+- `criar_csv_mestre()`: Combina CSVs individuais em CSV mestre.
+- `comparar_com_goldstandard()`: Compara termos extraídos com anotações gold standard XML, gera Excel com classificações VP/FP/FN.
 
-Os modelos GGUF são baixados do Hugging Face, especificamente do repositório [TheBloke](https://huggingface.co/TheBloke), que fornece versões quantizadas otimizadas.
+### utils/processador_csv.py
+- `criar_dataframe_e_exportar_csv()`: Faz parse da resposta LLaMA, extrai termos no formato [Texto | Abrev | Cat | SCTID], exporta para CSV.
 
-1. **Escolha o Repositório**:
-   - Para Llama 3.2: [TheBloke/Llama-3.2-*-Instruct-GGUF](https://huggingface.co/TheBloke/Llama-3.2-3B-Instruct-GGUF) (substitua * pelo tamanho, ex.: 3B, 7B).
-   - Para Llama 3.1: [TheBloke/Llama-3.1-*-Instruct-GGUF](https://huggingface.co/TheBloke/Llama-3.1-8B-Instruct-GGUF).
+### utils/processador_llama.py
+- `PesquisaClin_Llama()`: Chama LLaMA com prompt, trata divisão de texto se necessário.
+- `dividir_texto_por_prompt_seguro()`: Divide textos longos para caber na janela de contexto.
 
-2. **Baixe o Arquivo**:
-   - Acesse o repositório no Hugging Face.
-   - Baixe o arquivo `.gguf` desejado (recomendado: variantes Q4_K_M para equilíbrio qualidade/tamanho).
-   - Coloque na pasta `modelo/` do projeto.
+### utils/similaridade.py
+- `medir_similaridade()`: Calcula similaridade cosseno entre termos usando TF-IDF.
 
-3. **Usando CLI (Opcional)**:
-   Se tiver `huggingface-cli` instalado (`pip install huggingface-hub`):
-   ```
-   huggingface-cli download TheBloke/Llama-3.2-7B-Instruct-GGUF Llama-3.2-7B-Instruct-Q4_K_M.gguf --local-dir ./modelo
-   ```
+### utils/mapeamento_snomed.py
+- `prompt_avmap()`: Consulta API SNOMED CT para validar códigos.
 
-**Nota**: Certifique-se de ter espaço em disco suficiente e conexão estável. Modelos maiores podem levar tempo para baixar.
+### utils/processador_excel.py
+- `carregar_dicionario()` / `salvar_dicionario()`: Carrega/salva dicionário SNOMED em JSON.
+- `carregar_excel()` / `salvar_excel()`: Carrega/salva arquivos Excel.
 
-## Resultados e Avaliação
+### utils/processador_xml.py
+- `relacoes()` / `dados_relacionados()`: Faz parse de anotações XML e relações.
+- `padronizar_string()` / `stem_frase()`: Pré-processamento de texto.
 
-- **Métricas Calculadas**: Precisão, Recall, F1-Score baseadas em VP, FP, FN.
-- **Comparação**: Inclui similaridade semântica para reduzir FPs/FNs por variações de termos.
-- **Mapeamento SNOMED**: Verifica códigos SCTID contra um dicionário local e API (se disponível).
+### utils/processador_relacoes.py
+- Funções para processar relações entre anotações XML.
 
-## Diferença entre Ollama e Llama
+### comando_llama/prompt.py
+- `PROMPT_TEMPLATE`: Prompt detalhado para LLaMA extrair e anotar termos clínicos.
 
-- **Llama**: Refere-se à família de modelos de linguagem grande (LLMs) desenvolvidos pela Meta (anteriormente Facebook). Estes modelos são treinados em grandes quantidades de dados e podem ser usados para tarefas como geração de texto, tradução e extração de informações. No projeto, usamos o `llama-cpp-python` para executar versões quantizadas do Llama localmente em formato GGUF.
+## Interpretação dos Resultados
 
-- **Ollama**: É uma ferramenta de software open-source que facilita a execução de modelos de IA, incluindo modelos Llama, localmente na máquina do usuário. Ollama fornece uma interface simplificada para baixar, gerenciar e executar LLMs sem necessidade de configurações complexas. É uma alternativa ao `llama-cpp-python`, oferecendo maior facilidade de uso, mas com menos controle sobre parâmetros avançados e potencialmente maior consumo de recursos.
+- **Classificações**: VP (Verdadeiro Positivo), FP (Falso Positivo), FN (Falso Negativo), VPP (Verdadeiro Positivo após similaridade).
+- **Métricas**: Precisão (VP / (VP + FP)), Recall (VP / (VP + FN)), F1-Score (média harmônica de Precisão e Recall).
+- **Mapeamento SNOMED**: Verifica se códigos existem e correspondem aos termos.
+- Resultados salvos em `data/Resultados.xlsx`.
+
+## Saída
+
+- CSVs individuais em `data/csv_output/`
+- CSV mestre: `data/csv_output/todas_narrativas_extraidas_ordenado.csv`
+- Excel de resultados: `data/Resultados.xlsx` com classificações e mapeamentos.
+- Saída no console: Métricas (Precisão, Recall, F1), contagens SNOMED, tempo de execução.

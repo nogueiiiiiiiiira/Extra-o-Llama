@@ -1,220 +1,252 @@
-import os
 import pandas as pd
+import openpyxl
 import time
 from llama_cpp import Llama
-from openpyxl import load_workbook
-from utils.processador_csv import criar_dataframe_e_exportar_csv
-from utils.config import carregar_config
-from utils.processar_llama import PesquisaClin_Llama
-from utils.processar_xml import processar_xml
-from utils.analise import processar_narrativa_para_analise, calcular_similaridade_e_atualizar_excel, calcular_metricas
-from utils.mapeamento_snomed import mapear_snomed_para_excel, contar_resultados_mapeamento, verificar_snomed
 
-def main():
+from utils.processador_narrativa import processar_narrativas, criar_csv_mestre, comparar_com_goldstandard
+from utils.similaridade import medir_similaridade
+from utils.mapeamento_snomed import prompt_avmap
+from utils.processador_excel import carregar_dicionario, salvar_dicionario
 
-    # carrega config, que inclui paths e parâmetros
-    config = carregar_config()
+# Medir tempo de execução de funções
+def medir_tempo(func):
+    def wrapper(*args, **kwargs):
+        inicio = time.time()
+        resultado = func(*args, **kwargs)
+        fim = time.time()
+        print(f"\nTempo de execução de {func.__name__}: {fim - inicio:.2f} segundos")
+        return resultado
+    return wrapper
 
-    # caminhos dos arquivos
-    base_dir = config['base_dir']
-    modelo_path = os.path.join(base_dir, config['modelo_path'])
-    pasta_xml = os.path.join(base_dir, config['pasta_xml'])
-    arquivo_excel = os.path.join(base_dir, config['arquivo_excel'])
-    output_dir = os.path.join(base_dir, config['output_dir'])
-    csv_path = os.path.join(base_dir, config['csv_path'])
-    excel_resultados = os.path.join(base_dir, config['excel_resultados'])
-    dicionario_path = os.path.join(base_dir, config['dicionario_path'])
+# Pastas e arquivos principais
+PASTA_NARRATIVAS = 'narrativas'  # Narrativas XML de entrada
+CSV_OUTPUT_FOLDER = 'data/csv_output'  # Saída CSV individual e mestre
+DICIONARIO_PATH = 'data/dicionario.json'  # Dicionário SNOMED persistido
+RESULTADOS_EXCEL = 'data/Resultados.xlsx'  # Excel final com métricas
 
-    # parâmetros
-    similaridade = config['similaridade']
-    max_tokens_por_bloco = config['max_tokens_por_bloco']
-    sleep_sec = config['sleep_sec']
-    max_retries = config['max_retries']
-    retry_delay_seconds = config['retry_delay_seconds']
-    llm_max_tokens = config['llm_max_tokens']
-    llm_temperature = config['llm_temperature']
-    llm_n_ctx = config['llm_n_ctx']
+# Inicializa lista para armazenar DataFrames de cada narrativa
+lista_dataframes_individuais = []
 
-    # inicializar LLaMA
-    print("=== INICIALIZAÇÃO ===")
-    try:
-        llm = Llama(model_path=modelo_path, n_ctx=llm_n_ctx)
-        print("\n\n✅ LLaMA inicializado com sucesso.")
-    except Exception as e:
-        print(f"❌ Erro ao inicializar LLaMA: {e}")
-        return
+inicio = time.time()  # Marca início da execução total
 
-    # criar output_dir se não existir
-    os.makedirs(output_dir, exist_ok=True)
+# Inicializa modelo LLaMA
+llm = Llama(
+    model_path="modelo/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+    n_ctx=8192,  # Tamanho máximo de contexto
+    n_threads=8,  # Ajuste conforme CPU
+    n_gpu_layers=20,  # Para acelerar se houver GPU
+)
 
-    # inicializar CSV se não existir
-    if not os.path.exists(csv_path):
-        pd.DataFrame(columns=["arquivo", "resposta"]).to_csv(csv_path, index=False)
-        print("CSV inicial criado!")
+# Processa todas as narrativas XML em blocos, gera CSVs individuais
+lista_dataframes_individuais = processar_narrativas(
+    PASTA_NARRATIVAS, CSV_OUTPUT_FOLDER, llm, max_tokens=512, temperature=0.0
+)
 
-    # encontrar arquivos XML
-    arquivos_xml = []
-    for root, dirs, files in os.walk(pasta_xml):
-        for f in files:
-            if f.lower().endswith('.xml'):
-                arquivos_xml.append(os.path.join(root, f))
+# Cria CSV mestre unindo todos os CSVs individuais
+csv_mestre = criar_csv_mestre(lista_dataframes_individuais, CSV_OUTPUT_FOLDER)
 
-    print("\n=== PROCESSAMENTO DOS XMLs ===")
-    if not arquivos_xml:
-        print("\n❌ Nenhum arquivo XML válido encontrado na pasta de narrativas.")
-        return
-    else:
-        print(f"\n✅ {len(arquivos_xml)} arquivos XML encontrados. Iniciando processamento...")
+if csv_mestre:
+    # Compara CSV mestre com gold standard e salva métricas iniciais em Excel
+    df_resultado = comparar_com_goldstandard(csv_mestre, PASTA_NARRATIVAS, RESULTADOS_EXCEL)
 
-    # iniciar timer para processamento dos XMLs
-    start_time = time.time()
-
-    # processar XMLs
-    lista_dataframes_individuais = []
-    for caminho_narrativa in arquivos_xml:
-        print(f"\nProcessando {os.path.basename(caminho_narrativa)}")
-
-        for attempt in range(max_retries):
-            try:
-                if not os.path.exists(caminho_narrativa):
-                    print(f"\nArquivo não encontrado: {caminho_narrativa}. Tentando novamente...")
-                    time.sleep(retry_delay_seconds)
-                    continue
-
-                resposta = processar_xml(caminho_narrativa, llm, max_tokens_por_bloco, sleep_sec)
-                print(f"\n✅ Bloco processado (Tentativa {attempt + 1})")
-
-                nome_arquivo_csv_individual = os.path.join(output_dir, f"output_{os.path.basename(caminho_narrativa)}.csv")
-                dataframe_resultante = criar_dataframe_e_exportar_csv(
-                    input_text=resposta,
-                    csv_filename=nome_arquivo_csv_individual,
-                    narrative_name=os.path.basename(caminho_narrativa)
-                )
-
-                if dataframe_resultante is None or dataframe_resultante.empty:
-                    dataframe_resultante = pd.DataFrame([{
-                        "nomeNarrativa": os.path.basename(caminho_narrativa),
-                        "textoPrompt": "",
-                        "categoria": "",
-                        "textoAnalisado": "",
-                        "abreviacao": "",
-                        "SCTID": ""
-                    }])
-
-                lista_dataframes_individuais.append(dataframe_resultante)
-                print(f"\n✅ DataFrame registrado.")
-                break
-
-            except Exception as e:
-                print(f"\n❌ Erro: {e}. Pulando arquivo.")
-                break
-
-    # finalizar timer
-    elapsed_time = time.time() - start_time
-    print(f"\n⏱️ TEMPO TOTAL: {elapsed_time:.2f} segundos ({elapsed_time/60:.2f} minutos)")
-
-    # consolidar CSVs
-    if lista_dataframes_individuais:
-        df_mestre = pd.concat(lista_dataframes_individuais, ignore_index=True)
-
-        df_mestre_sorted = df_mestre.sort_values(
-            by=['nomeNarrativa', 'textoAnalisado'],
-            ascending=[True, True],
-            key=lambda col: col.str.lower() if col.name == 'textoAnalisado' else col,
-            ignore_index=True
-        )
-
-        master_csv_filename = os.path.join(output_dir, "todas_narrativas_extraidas_ordenado.csv")
-        df_mestre_sorted.to_csv(master_csv_filename, index=False, encoding='utf-8', sep=',')
-        print(f"\n✅ CSV mestre gerado: {master_csv_filename}")
-    else:
-        print("\n❌ Nenhum DataFrame individual foi gerado.")
-
-    print("\nIniciando análise das narrativas...")
-    print("\n=== ANÁLISE ===")
-    excel_prompts = os.path.join(output_dir, "todas_narrativas_extraidas_ordenado.csv")
-    df_prompts = pd.read_csv(excel_prompts, encoding='utf-8')
-
-    col_mapping = {
-        'nomeNarrativa': 'nomeNarrativa',
-        'textoPrompt': 'textoPrompt',
-        'categoria': 'categoria',
-        'textoAnalisado': 'termo',
-        'abreviacao': 'abreviacao',
-        'SCTID': 'SCTID'
-    }
-    df_prompts = df_prompts.rename(columns=col_mapping)
-
-    narrativas_unicas = df_prompts['nomeNarrativa'].dropna().unique()
-
-    registros_resultado = []
-    for narrativa_atual in narrativas_unicas:
-        print(f"\nProcessando narrativa {narrativa_atual}")
-        registros = processar_narrativa_para_analise(narrativa_atual, df_prompts, excel_resultados, pasta_xml, similaridade)
-        registros_resultado.extend(registros)
-
-    df_resultado = pd.DataFrame(registros_resultado)
-    df_resultado.to_excel(excel_resultados, index=False, sheet_name='Resultados')
-    print("\n✅ Resultados salvos no Excel.")
-
-    print("\n=== SIMILARIDADE ===")
-    calcular_similaridade_e_atualizar_excel(excel_resultados, similaridade)
-
-    print("\n=== MÉTRICAS ===")
-    VP, FP, FN, VPP, precisao, recall, f1_score = calcular_metricas(excel_resultados)
-    print(f"VP: {VP}, FP: {FP}, FN: {FN}, VPP: {VPP}")
-    print(f"Precisão: {precisao:.4f}, Recall: {recall:.4f}, F1-Score: {f1_score:.4f}")
-
-    print("\n=== MAPEAMENTO SNOMED ===")
-    dicionario = mapear_snomed_para_excel(excel_resultados, dicionario_path)
-    print("\n✅ Dicionário SNOMED carregado.")
-
-    # exemplo de verificação
-    termo = 'febre'
-    codigo = '386661006'
-    resposta = verificar_snomed(codigo, termo, dicionario)
-    print(f"\nVerificar se '{termo}' corresponde a {codigo}: {resposta}")
-
-    # contar resultados
-    contagem = contar_resultados_mapeamento(excel_resultados)
-
-    # exemplo de execução
-    termo = 'febre'
-    codigo = '386661006'
-    print(f"\nVerificar se '{termo}' corresponde a {codigo} na terminologia SNOMED: ")
-    print("\nResposta do modelo: ")
-    resposta = verificar_snomed(codigo, termo, dicionario)
-    if resposta == 0:
-        print("\nO código SNOMED CT fornecido não existe")
-    elif resposta == 1:
-        print("\nO código existe, mas não corresponde ao termo fornecido")
-    elif resposta == 2:
-        print("\nO código existe e corresponde corretamente ao termo fornecido")
-    else:
-        print(resposta)
-
-    # visualizar resultados
-    workbook = load_workbook(excel_resultados)
+    # Carrega Excel para análise de similaridade entre termos FP e FN
+    workbook = openpyxl.load_workbook(RESULTADOS_EXCEL)
     planilha = workbook['Resultados']
+
+    limiar_similaridade = 0.7  # Limite de similaridade para considerar correspondência. 
+    # Isso significa que, se a similaridade calculada entre um termo do prompt e um termo do gold standard for maior que 0.7, eles serão considerados semântica ou textualmente próximos.
+
+    achados_prompt_for_sim = []
+    achados_semclin_for_sim = []
+    index_semclin = []
+    index_prompt = []
+    narrativa_anterior = ""
+
+    # Percorre linhas do Excel, realizando análise de similaridade
+    for index in range(2, planilha.max_row + 1):
+        n1 = ''
+        n2 = ''
+        if planilha[f'A{index}'].value:
+            n1 = str(planilha[f'A{index}'].value)[:4]
+        elif planilha[f'G{index}'].value:
+            n2 = str(planilha[f'G{index}'].value)[:4]
+
+        narrativa_atual = n1 if n1 else n2
+
+        # Quando muda a narrativa ou chega na última linha, realiza comparação
+        if narrativa_atual and (narrativa_atual != narrativa_anterior or index == planilha.max_row):
+            if achados_semclin_for_sim and achados_prompt_for_sim:
+                for i_p, t_prompt in enumerate(achados_prompt_for_sim):
+                    for i_s, t_semclin in enumerate(achados_semclin_for_sim):
+                        t_prompt_str = str(t_prompt)
+                        t_semclin_str = str(t_semclin)
+
+                        if not t_prompt_str or not t_semclin_str:
+                            continue
+
+                        # Calcula similaridade entre termos
+                        resultado = medir_similaridade(t_prompt_str, t_semclin_str)
+
+                        if resultado > limiar_similaridade:
+                            print(f"\n{resultado:.3f} -> {t_prompt_str} + {t_semclin_str}")
+
+                            # Atualiza classificação para VPP se necessário
+                            classificacao_atual = planilha[f'J{index_prompt[i_p]}'].value
+                            if classificacao_atual in ['FN', 'FP']:
+                                planilha[f'J{index_prompt[i_p]}'] = 'VPP'
+                            planilha[f'J{index_semclin[i_s]}'] = ''
+
+                            # Remove termos já processados
+                            achados_prompt_for_sim.pop(i_p)
+                            achados_semclin_for_sim.pop(i_s)
+                            index_prompt.pop(i_p)
+                            index_semclin.pop(i_s)
+                            break
+
+            # Reseta listas para próxima narrativa
+            achados_prompt_for_sim = []
+            achados_semclin_for_sim = []
+            index_semclin = []
+            index_prompt = []
+
+        # Armazena termos FP e FN para análise de similaridade
+        if not (index == planilha.max_row and narrativa_atual == narrativa_anterior):
+            avaliacao = planilha[f'J{index}'].value
+            if avaliacao == 'FN':
+                termo = planilha[f'H{index}'].value
+                if termo is not None:
+                    achados_semclin_for_sim.append(str(termo))
+                    index_semclin.append(index)
+            elif avaliacao == 'FP':
+                termo = planilha[f'D{index}'].value
+                if termo is not None:
+                    achados_prompt_for_sim.append(str(termo))
+                    index_prompt.append(index)
+
+        narrativa_anterior = narrativa_atual
+
+    # Salva Excel atualizado com VPP
+    workbook.save(RESULTADOS_EXCEL)
+
+    # Mapeamento SNOMED
+    dicionario = carregar_dicionario(DICIONARIO_PATH)
+    workbook = openpyxl.load_workbook(RESULTADOS_EXCEL)
+    planilha = workbook['Resultados']
+
+    def termo_abreviacao(termo, abreviacao):
+        # Junta termo e abreviação para exibição
+        return f'{termo} ({abreviacao})'
+
+    # Atualiza coluna de correspondência SNOMED no Excel
+    index = 2
+    while planilha[f'A{index}'].value or planilha[f'G{index}'].value:
+        termo_analisado = planilha[f'D{index}'].value
+        sctid_valor = planilha[f'F{index}'].value
+
+        if sctid_valor and sctid_valor != 'NotFound':
+            try:
+                SCTID = int(sctid_valor)
+                abreviacao = planilha[f'E{index}'].value
+                termo = termo_abreviacao(termo_analisado, abreviacao) if abreviacao else termo_analisado
+
+                # Atualiza dicionário SNOMED e Excel
+                if SCTID in dicionario:
+                    if termo in dicionario[SCTID]:
+                        planilha[f'K{index}'] = 2
+                    else:
+                        planilha[f'K{index}'] = 1
+                else:
+                    resposta = prompt_avmap(SCTID, termo)
+                    if resposta == 2:
+                        if SCTID in dicionario:
+                            dicionario[SCTID].append(termo)
+                        else:
+                            dicionario[SCTID] = [termo]
+                    planilha[f'K{index}'] = resposta
+            except ValueError:
+                planilha[f'K{index}'] = 'Error'
+            except Exception as e:
+                planilha[f'K{index}'] = 'Error'
+
+        index += 1
+
+    # Salva Excel e dicionário SNOMED atualizado
+    workbook.save(RESULTADOS_EXCEL)
+    salvar_dicionario(dicionario, DICIONARIO_PATH)
+
+    # Cálculo das métricas de avaliação
+    workbook = openpyxl.load_workbook(RESULTADOS_EXCEL)
+    planilha = workbook['Resultados']
+
+    index = 2
+    VP = FP = FN = VPP = 0
+
+    # Conta classificações para cálculo de métricas
+    while planilha[f'A{index}'].value or planilha[f'G{index}'].value:
+        classificacao = planilha[f'J{index}'].value
+        if classificacao == 'VP':
+            VP += 1
+        elif classificacao == 'FP':
+            FP += 1
+        elif classificacao == 'FN':
+            FN += 1
+        elif classificacao == 'VPP':
+            VPP += 1
+        index += 1
+
+    # Calcula precisao, Recall e F1-Score
+    precisao = (VP + VPP) / (VP + VPP + FP) if (VP + VPP + FP) > 0 else 0
+    recall = (VP + VPP) / (VP + VPP + FN) if (VP + VPP + FN) > 0 else 0
+    f1 = 2 * (precisao * recall) / (precisao + recall) if (precisao + recall) > 0 else 0
+
+    metricas = {
+        "VP": [VP], "FP": [FP], "FN": [FN], "VPP": [VPP],
+        "precisao": [precisao], "Recall": [recall], "F1-Score": [f1]
+    }
+    df_metricas = pd.DataFrame(metricas)
+
+    # Exibe métricas no terminal
+    print("\n+---------------------------------------------------------------+")
+    print("|\t 📊 RESULTADOS DA EXTRAÇÃO DE TERMOS CLÍNICOS           |")
+    print("+-------+-------+-------+-------+-----------+--------+----------+")
+    print("|   VP  |   FP  |   FN  |  VPP  | Precisão  | Recall | F1-Score |")
+    print("+-------+-------+-------+-------+-----------+--------+----------+")
+    for index, row in df_metricas.iterrows():
+        print(f"|{int(row['VP']):5}  |{int(row['FP']):5}  |{int(row['FN']):5}  |{int(row['VPP']):5}  |{row['precisao']:9.3f}  | {row['Recall']:6.3f} |{row['F1-Score']:8.3f}  |")
+    print("+-------+-------+-------+-------+-----------+--------+----------+")
+
+
+    # Contagem SNOMED CT
     index = 2
     resultados = [0, 0, 0]
     while planilha[f'A{index}'].value or planilha[f'G{index}'].value:
         classificacao = planilha[f'K{index}'].value
-        if classificacao is not None:
-            if isinstance(classificacao, int):
-                resultados[int(classificacao)] += 1
+        if isinstance(classificacao, int):
+            resultados[classificacao] += 1
         index += 1
 
     contagem = {
-        "O código SNOMED CT fornecido não existe": [resultados[0]],
-        "O código existe, mas não corresponde ao termo fornecido": [resultados[1]],
-        "O código existe E corresponde corretamente ao termo fornecido": [resultados[2]],
-        "Total": [sum(resultados)]
+        "Códigos SNOMED CT não encontrados": [resultados[0]],
+        "Códigos existem mas não correspondem": [resultados[1]],
+        "Códigos existem e correspondem": [resultados[2]],
+        "Total de códigos verificados": [sum(resultados)]
     }
 
     df = pd.DataFrame(contagem)
-    print("\n=== RESULTADOS DO MAPEAMENTO SNOMED: ===\n\n")
-    print(df)
 
-if __name__ == "__main__":
-    main()
+    # Exibe resultados do mapeamento SNOMED CT
+    print("\n\n+-----------------------------------+-------+")
+    print("| 🔍 RESULTADOS DO MAPEAMENTO SNOMED CT     |")
+    print("+-----------------------------------+-------+")
+    print("| Descrição                         | Total |")
+    print("+-----------------------------------+-------+")
+    for col in df.columns:
+        print(f"| {col:<33} | {int(df[col].iloc[0]):5} |")
+    print("+-----------------------------------+-------+")
+
+    fim = time.time()
+    tempo_total = fim - inicio
+    print(f"\n⏱️   TEMPO TOTAL DE EXECUÇÃO: {tempo_total:.2f} segundos\n")
+
+else:
+    print("\nNenhum CSV mestre foi gerado.")

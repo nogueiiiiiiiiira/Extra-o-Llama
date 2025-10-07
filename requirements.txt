@@ -1,0 +1,9 @@
+pandas
+openai
+requests
+openpyxl
+numpy
+scikit-learn
+nltk
+llama-cpp-python
+unidecode
