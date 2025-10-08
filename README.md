@@ -120,6 +120,16 @@ projeto/
 - **Mapeamento SNOMED**: Verifica se códigos existem e correspondem aos termos.
 - Resultados salvos em `data/Resultados.xlsx`.
 
+## Solução de Problemas
+
+- **Erro de memória ou "out of memory"**: Reduza `n_ctx` em `main.py` (ex: para 4096) ou use um modelo LLaMA menor. Certifique-se de ter pelo menos 8 GB de RAM livre.
+- **Modelo não encontrado**: Verifique se o arquivo `.gguf` está em `modelo/` e o caminho em `main.py` está correto. Execute o comando de download novamente se necessário.
+- **Erro ao parsear XML**: Certifique-se de que os arquivos XML têm a estrutura esperada com tag `<TEXT>`. Arquivos corrompidos podem causar falhas.
+- **Sem resultados ou métricas zeradas**: Verifique se há arquivos gold standard correspondentes (ex: `9053.xml` e `9053_goldstandard.xml`). O processamento pode falhar se os dados de entrada estiverem incompletos.
+- **Problemas com SNOMED CT**: Se o mapeamento falhar, verifique a conexão com a internet (para consultas à API SNOMED) e se os códigos SCTID são válidos.
+- **Execução lenta**: Ajuste `n_threads` em `main.py` conforme o número de núcleos da CPU. Use GPU se disponível (aumente `n_gpu_layers`).
+- **Dependências faltando**: Execute `pip install -r requirements.txt` novamente. Se `llama-cpp-python` falhar, instale com suporte a CUDA se houver GPU: `pip install llama-cpp-python[cuBLAS]`.
+
 ## Saída
 
 - CSVs individuais em `data/csv_output/`

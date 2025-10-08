@@ -8,15 +8,7 @@ from utils.similaridade import medir_similaridade
 from utils.mapeamento_snomed import prompt_avmap
 from utils.processador_excel import carregar_dicionario, salvar_dicionario
 
-# Medir tempo de execução de funções
-def medir_tempo(func):
-    def wrapper(*args, **kwargs):
-        inicio = time.time()
-        resultado = func(*args, **kwargs)
-        fim = time.time()
-        print(f"\nTempo de execução de {func.__name__}: {fim - inicio:.2f} segundos")
-        return resultado
-    return wrapper
+
 
 # Pastas e arquivos principais
 PASTA_NARRATIVAS = 'narrativas'  # Narrativas XML de entrada
@@ -53,8 +45,7 @@ if csv_mestre:
     workbook = openpyxl.load_workbook(RESULTADOS_EXCEL)
     planilha = workbook['Resultados']
 
-    limiar_similaridade = 0.7  # Limite de similaridade para considerar correspondência. 
-    # Isso significa que, se a similaridade calculada entre um termo do prompt e um termo do gold standard for maior que 0.7, eles serão considerados semântica ou textualmente próximos.
+    limiar_similaridade = 0.7  # Limite de similaridade para considerar correspondência
 
     achados_prompt_for_sim = []
     achados_semclin_for_sim = []
@@ -154,15 +145,16 @@ if csv_mestre:
                     if termo in dicionario[SCTID]:
                         planilha[f'K{index}'] = 2
                     else:
-                        planilha[f'K{index}'] = 1
-                else:
-                    resposta = prompt_avmap(SCTID, termo)
-                    if resposta == 2:
-                        if SCTID in dicionario:
+                        resposta = prompt_avmap(SCTID, termo, llm)
+                        planilha[f'K{index}'] = resposta
+                        if resposta == 2:
                             dicionario[SCTID].append(termo)
-                        else:
-                            dicionario[SCTID] = [termo]
+                else:
+                    # Chama prompt_avmap passando o modelo LLaMA
+                    resposta = prompt_avmap(SCTID, termo, llm)
                     planilha[f'K{index}'] = resposta
+                    if resposta == 2:
+                        dicionario[SCTID] = [termo]
             except ValueError:
                 planilha[f'K{index}'] = 'Error'
             except Exception as e:
@@ -218,13 +210,20 @@ if csv_mestre:
 
     # Contagem SNOMED CT
     index = 2
-    resultados = [0, 0, 0]
+    resultados = [0, 0, 0]  # [não encontrados, existem mas não correspondem, existem e correspondem]
+
     while planilha[f'A{index}'].value or planilha[f'G{index}'].value:
         classificacao = planilha[f'K{index}'].value
-        if isinstance(classificacao, int):
-            resultados[classificacao] += 1
+        try:
+            # Força conversão para inteiro, mesmo que esteja como string
+            numero = int(classificacao)
+            resultados[numero] += 1
+        except:
+            # Caso o valor não seja numérico, ignora
+            pass
         index += 1
 
+    # Monta DataFrame com contagem final
     contagem = {
         "Códigos SNOMED CT não encontrados": [resultados[0]],
         "Códigos existem mas não correspondem": [resultados[1]],
@@ -234,7 +233,7 @@ if csv_mestre:
 
     df = pd.DataFrame(contagem)
 
-    # Exibe resultados do mapeamento SNOMED CT
+    # Exibe resultados do mapeamento SNOMED CT no terminal
     print("\n\n+-----------------------------------+-------+")
     print("| 🔍 RESULTADOS DO MAPEAMENTO SNOMED CT     |")
     print("+-----------------------------------+-------+")

@@ -50,7 +50,7 @@ def PesquisaClin_Llama(textoClinico, llm, max_tokens=256, temperature=0.7):
     for i, bloco in enumerate(blocos):
         prompt = PROMPT_TEMPLATE.format(textoClinico=bloco)
         try:
-            print(f"\n🔹 Processando bloco {i+1}/{len(blocos)} ({len(llm.tokenize(prompt.encode()))} tokens incluindo prompt)...")
+            print(f"\n🔹 Processando bloco {i+1}/{len(blocos)} ({len(llm.tokenize(prompt.encode()))} tokens incluindo prompt)...\n")
             result = llm(prompt=prompt, max_tokens=max_tokens, temperature=temperature)
             respostas.append(result["choices"][0]["text"].strip())  # Armazena resposta do bloco
         except Exception as e:
